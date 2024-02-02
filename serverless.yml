@@ -1,0 +1,65 @@
+service: serverless-playground
+
+custom:
+  webpack:
+    webpackConfig: ./webpack.config.js
+    includeModules: true
+
+plugins:
+  - serverless-webpack
+
+provider:
+  name: aws
+  runtime: nodejs16.x
+  apiGateway:
+    minimumCompressionSize: 1024
+  environment:
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - kinesis:*
+          Resource: "*"
+
+functions:
+  DataStreamProducer:
+    handler: data-stream-producer.handler
+    events:
+      - http:
+          method: put
+          path: produce
+
+  DataStreamConsumer:
+    handler: data-stream-consumer.handler
+    events:
+      - stream:
+          arn:
+            Fn::GetAtt:
+              - DataStream
+              - Arn
+          batchSize: 10
+          destinations:
+            onFailure:
+              arn:
+                Fn::GetAtt:
+                  - DataStreamFailureDestination
+                  - Arn
+              type: sqs
+          functionResponseType: ReportBatchItemFailures
+          maximumRetryAttempts: 3
+          parallelizationFactor: 1
+          type: kinesis
+resources:
+  Resources:
+    DataStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        RetentionPeriodHours: 24
+        ShardCount: 1
+    DataStreamFailureDestination:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: "DataStreamFailureDestination"
+          
